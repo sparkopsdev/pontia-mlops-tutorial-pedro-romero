@@ -69,6 +69,7 @@ docker-compose.override.yml
 mlruns/
 artifacts/
 models/
+run_id.txt
 *.log
 *.h5
 *.pkl
