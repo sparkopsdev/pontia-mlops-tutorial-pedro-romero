@@ -20,12 +20,14 @@ logging.basicConfig(
     ]
 )
 logger=logging.getLogger("adult-income")
+logging.getLogger("azure.identity").setLevel(logging.WARNING)
+logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(logging.WARNING)
 
 run_name = f"run-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
 
 # MLflow config
-MLFLOW_URI = "http://localhost:5000"
-EXPERIMENT_NAME = "adult-income"
+MLFLOW_URI = "http://mlflow-9675.eastus.azurecontainer.io:5000/"
+EXPERIMENT_NAME = "adult-income-pedro-romero"
 
 mlflow.set_tracking_uri(MLFLOW_URI)
 mlflow.set_experiment(EXPERIMENT_NAME)
