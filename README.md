@@ -2,4 +2,4 @@
 This project trains a RandomForest model on tabular data.
 
 # Autor
-Pedro José 
+Pedro José Romero Gombau

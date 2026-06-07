@@ -37,7 +37,6 @@ mlruns/
 mlartifacts/
 artifacts/
 models/
-data/
 *.log
 *.pkl
 *.joblib
