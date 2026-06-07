@@ -1,0 +1,156 @@
+name: Deploy Model
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  MLFLOW_TRACKING_URI: ${{ vars.MLFLOW_URL }}
+  MLFLOW_URL: ${{ vars.MLFLOW_URL }}
+  MODEL_NAME: ${{ vars.MODEL_NAME }}
+  MODEL_ALIAS: ${{ vars.MODEL_ALIAS }}
+  AZURE_CONTAINER_NAME: ${{ vars.AZURE_CONTAINER_NAME }}
+  IMAGE_NAME: ${{ vars.IMAGE_NAME }}
+  AZURE_REGION: ${{ vars.AZURE_REGION }}
+
+jobs:
+  deploy:
+    name: deploy-model-api
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Compute deployment names
+        shell: bash
+        run: |
+          ACR_NAME="${{ secrets.ACR_NAME }}"
+          ACR_SHORT="${ACR_NAME%%.azurecr.io}"
+          if [[ "$ACR_NAME" == *.azurecr.io ]]; then
+            ACR_LOGIN_SERVER="$ACR_NAME"
+          else
+            ACR_LOGIN_SERVER="$ACR_NAME.azurecr.io"
+          fi
+          IMAGE_TAG="$ACR_LOGIN_SERVER/${IMAGE_NAME}:${GITHUB_SHA}"
+          MODEL_URI="models:/${MODEL_NAME}@${MODEL_ALIAS}"
+          {
+            echo "ACR_SHORT=$ACR_SHORT"
+            echo "ACR_LOGIN_SERVER=$ACR_LOGIN_SERVER"
+            echo "IMAGE_TAG=$IMAGE_TAG"
+            echo "MODEL_URI=$MODEL_URI"
+          } >> "$GITHUB_ENV"
+
+      - name: Log in to Azure Container Registry
+        run: |
+          echo "${{ secrets.ACR_PASSWORD }}" | docker login "$ACR_LOGIN_SERVER" --username "${{ secrets.ACR_USERNAME }}" --password-stdin
+
+      - name: Build Docker image
+        run: docker build -t "$IMAGE_TAG" ./deployment
+
+      - name: Push Docker image to ACR
+        run: docker push "$IMAGE_TAG"
+
+      - name: Deploy to Azure Container Instances
+        shell: bash
+        run: |
+          az container delete \
+            --name "$AZURE_CONTAINER_NAME" \
+            --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
+            --yes || true
+
+          az container create \
+            --name "$AZURE_CONTAINER_NAME" \
+            --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
+            --image "$IMAGE_TAG" \
+            --registry-login-server "$ACR_LOGIN_SERVER" \
+            --registry-username "${{ secrets.ACR_USERNAME }}" \
+            --registry-password "${{ secrets.ACR_PASSWORD }}" \
+            --environment-variables \
+              MODEL_URI="$MODEL_URI" \
+              MODEL_NAME="$MODEL_NAME" \
+              MODEL_ALIAS="$MODEL_ALIAS" \
+              MLFLOW_TRACKING_URI="$MLFLOW_TRACKING_URI" \
+              MLFLOW_URL="$MLFLOW_URL" \
+            --secure-environment-variables \
+              AZURE_STORAGE_CONNECTION_STRING="${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}" \
+            --dns-name-label "$AZURE_CONTAINER_NAME" \
+            --ports 8080 \
+            --os-type Linux \
+            --cpu 0.5 \
+            --memory 1.0 \
+            --location "$AZURE_REGION"
+
+      - name: Wait and probe REST API
+        shell: bash
+        run: |
+          FQDN=$(az container show \
+            --name "$AZURE_CONTAINER_NAME" \
+            --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
+            --query ipAddress.fqdn -o tsv)
+          echo "API_FQDN=$FQDN" >> "$GITHUB_ENV"
+          echo "API URL: http://$FQDN:8080" | tee deploy-results.txt
+
+          for i in {1..24}; do
+            if curl --fail --silent "http://$FQDN:8080/health"; then
+              echo "API is healthy" | tee -a deploy-results.txt
+              exit 0
+            fi
+            echo "Waiting for API... attempt $i"
+            sleep 10
+          done
+          echo "API did not become healthy" | tee -a deploy-results.txt
+          exit 1
+
+      - name: System test predict and metrics
+        shell: bash
+        run: |
+          cat > payload.json <<'JSON'
+          {
+            "age": 38,
+            "workclass": "Private",
+            "fnlwgt": 89814,
+            "education": "HS-grad",
+            "education-num": 9,
+            "marital-status": "Married-civ-spouse",
+            "occupation": "Farming-fishing",
+            "relationship": "Husband",
+            "race": "White",
+            "sex": "Male",
+            "capital-gain": 0,
+            "capital-loss": 0,
+            "hours-per-week": 50,
+            "native-country": "United-States"
+          }
+          JSON
+          curl --fail --show-error --silent \
+            -H 'Content-Type: application/json' \
+            -d @payload.json \
+            "http://$API_FQDN:8080/predict" | tee -a deploy-results.txt
+          echo "" | tee -a deploy-results.txt
+          curl --fail --show-error --silent "http://$API_FQDN:8080/metrics" | tee -a deploy-results.txt
+
+      - name: Publish deployment summary
+        if: always()
+        run: |
+          echo "## Deployment results" >> "$GITHUB_STEP_SUMMARY"
+          cat deploy-results.txt >> "$GITHUB_STEP_SUMMARY" || true
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Logs command:" >> "$GITHUB_STEP_SUMMARY"
+          echo '```bash' >> "$GITHUB_STEP_SUMMARY"
+          echo "az container logs --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} --name $AZURE_CONTAINER_NAME" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload deployment results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-results
+          path: deploy-results.txt

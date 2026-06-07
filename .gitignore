@@ -1,4 +1,4 @@
-# --- Python ---
+# Python
 __pycache__/
 *.py[cod]
 *.pyo
@@ -9,74 +9,41 @@ __pycache__/
 build/
 dist/
 
-# --- Virtual environments ---
+# Virtual environments
 .env
+.env.*
 .venv/
-env/
 venv/
+env/
 ENV/
-*.env
 
-# --- Jupyter and notebooks ---
-.ipynb_checkpoints/
-*.nbconvert.ipynb
-
-
-
-# --- Experiment configs ---
-*.tfvars
-*.tfplan
-
-# --- MLflow cache (if used) ---
-mlruns/
-mlartifacts/
-
-# --- VSCode ---
+# IDE / OS
 .vscode/
-
-# --- PyCharm ---
 .idea/
-
-# --- OS-specific ---
 .DS_Store
 Thumbs.db
 
-# --- Test outputs ---
-coverage.xml
-.cache/
-pytest_cache/
-htmlcov/
-*.cover
+# Test outputs
+.coverage
 *.coverage
+coverage.xml
+htmlcov/
+.cache/
+.pytest_cache/
+test-results/
 
-# --- Docker ---
-*.pid
-*.log
-docker-compose.override.yml
-
-# --- Terraform (if used) ---
-.terraform/
-*.tfstate
-*.tfstate.backup
-
-# --- CI/CD secrets ---
-*.pem
-*.key
-.envrc
-.env.*
-
-# --- ML & data artifacts ---
+# MLflow / ML / data artifacts
 mlruns/
+mlartifacts/
 artifacts/
 models/
 *.log
-*.h5
 *.pkl
 *.joblib
+*.h5
 *.ckpt
 
-# --- Data files ---
-data/
+# Datasets / archives
 *.csv
 *.tsv
 *.json
@@ -84,3 +51,10 @@ data/
 *.parquet
 *.zip
 *.gz
+
+# Secrets / credentials
+azure_credentials.json
+secrets.txt
+vars.txt
+*.pem
+*.key
